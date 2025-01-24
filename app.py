@@ -11,7 +11,7 @@ genai.configure(api_key='AIzaSyDcYyq3w21iwipYn17wCAQo3AYWhUIGDSI')
 model = genai.GenerativeModel(model_name="gemini-1.5-pro")
 
 # Configure upload settings
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = '/tmp/uploads'  # Change to /tmp for Vercel
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png'}
 
 if not os.path.exists(UPLOAD_FOLDER):
@@ -114,4 +114,4 @@ def health_check():
     return jsonify({'status': 'healthy'}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True, port=7860)
+    app.run(host='0.0.0.0', port=7860)
