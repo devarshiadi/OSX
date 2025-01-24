@@ -3,7 +3,6 @@ import base64
 import json
 import google.generativeai as genai
 from flask import Flask, request, jsonify, render_template, send_file
-import sqlite3
 from datetime import datetime
 import csv
 import io
@@ -19,23 +18,8 @@ UPLOAD_FOLDER = '/tmp/uploads'  # Change to /tmp for Vercel
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# Initialize SQLite database
-def init_db():
-    conn = sqlite3.connect('business_cards.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS scanned_cards
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  company_name TEXT,
-                  email TEXT,
-                  contact_number TEXT,
-                  website TEXT,
-                  address TEXT,
-                  scan_date TIMESTAMP)''')
-    conn.commit()
-    conn.close()
-
-# Call init_db when the app starts
-init_db()
+# In-memory storage for business cards
+business_cards = []
 
 def process_image(image_bytes):
     base64_image = base64.b64encode(image_bytes).decode('utf-8')
@@ -117,22 +101,18 @@ def process_business_card():
         # Process the image and get clean JSON response
         result = process_image(image_bytes)
         
-        # Store the result in SQLite database
+        # Store the result in memory
         if 'businessCard' in result:
             card = result['businessCard']
-            conn = sqlite3.connect('business_cards.db')
-            c = conn.cursor()
-            c.execute('''INSERT INTO scanned_cards 
-                        (company_name, email, contact_number, website, address, scan_date)
-                        VALUES (?, ?, ?, ?, ?, ?)''',
-                     (card.get('companyName', ''),
-                      card.get('email', ''),
-                      card.get('contactNumber', ''),
-                      card.get('website', ''),
-                      card.get('address', ''),
-                      datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-            conn.commit()
-            conn.close()
+            business_cards.append({
+                'id': len(business_cards) + 1,
+                'companyName': card.get('companyName', ''),
+                'email': card.get('email', ''),
+                'contactNumber': card.get('contactNumber', ''),
+                'website': card.get('website', ''),
+                'address': card.get('address', ''),
+                'scanDate': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            })
         
         return jsonify(result), 200
         
@@ -142,40 +122,28 @@ def process_business_card():
 @app.route('/history', methods=['GET'])
 def get_history():
     try:
-        conn = sqlite3.connect('business_cards.db')
-        c = conn.cursor()
-        c.execute('SELECT * FROM scanned_cards ORDER BY scan_date DESC')
-        rows = c.fetchall()
-        history = []
-        for row in rows:
-            history.append({
-                'id': row[0],
-                'companyName': row[1],
-                'email': row[2],
-                'contactNumber': row[3],
-                'website': row[4],
-                'address': row[5],
-                'scanDate': row[6]
-            })
-        conn.close()
-        return jsonify(history), 200
+        return jsonify(business_cards), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/export_csv', methods=['GET'])
 def export_csv():
     try:
-        conn = sqlite3.connect('business_cards.db')
-        c = conn.cursor()
-        c.execute('SELECT * FROM scanned_cards ORDER BY scan_date DESC')
-        rows = c.fetchall()
-        conn.close()
-
         # Create CSV in memory
         si = io.StringIO()
         cw = csv.writer(si)
         cw.writerow(['ID', 'Company Name', 'Email', 'Contact Number', 'Website', 'Address', 'Scan Date'])
-        cw.writerows(rows)
+        
+        for card in business_cards:
+            cw.writerow([
+                card['id'],
+                card['companyName'],
+                card['email'],
+                card['contactNumber'],
+                card['website'],
+                card['address'],
+                card['scanDate']
+            ])
 
         output = io.BytesIO()
         output.write(si.getvalue().encode('utf-8'))
